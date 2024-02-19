@@ -308,6 +308,12 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) caerrors.AutoscalerErr
 		klog.Errorf("Failed to list pods: %v", err)
 		return caerrors.ToAutoscalerError(caerrors.ApiCallError, err)
 	}
+	klog.V(4).Info("customized list pods: %v", pods)
+	for _, pod := range pods {
+		klog.V(1).Info("customized pod %s/%s", pod.Namespace, pod.Name)
+		kube_util.Restart(a.ClientSet, pod.Namespace, pod.Name)
+		time.Sleep(100 * time.Second)
+	}
 	originalScheduledPods, unschedulablePods := kube_util.ScheduledPods(pods), kube_util.UnschedulablePods(pods)
 	schedulerUnprocessed := make([]*apiv1.Pod, 0, 0)
 	isSchedulerProcessingIgnored := len(a.BypassedSchedulers) > 0
