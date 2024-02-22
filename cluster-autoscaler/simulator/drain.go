@@ -17,7 +17,6 @@ limitations under the License.
 package simulator
 
 import (
-	"k8s.io/klog/v2"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"

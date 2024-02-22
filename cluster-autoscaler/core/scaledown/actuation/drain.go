@@ -19,6 +19,7 @@ package actuation
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"sort"
 	"strings"
 	"time"
@@ -28,7 +29,6 @@ import (
 	kube_errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/autoscaler/cluster-autoscaler/metrics"
-	"k8s.io/klog/v2"
 	kubelet_config "k8s.io/kubernetes/pkg/kubelet/apis/config"
 
 	acontext "k8s.io/autoscaler/cluster-autoscaler/context"
@@ -249,30 +249,45 @@ func (e Evictor) restartPod(ctx *acontext.AutoscalingContext, podToEvict *apiv1.
 
 	var lastError error
 	namespace := podToEvict.Namespace
-	name := podToEvict.Labels["app"]
+	name := podToEvict.Name
 	for first := true; first || time.Now().Before(retryUntil); time.Sleep(e.EvictionRetryTime) {
 		first = false
-
 		klog.V(4).Infof("customized going to restart : %v %v", namespace, name)
-		deploy, err := ctx.ClientSet.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+		deploys, err := ctx.ClientSet.AppsV1().Deployments(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
-			klog.Errorf("customized get deploy by namespace, name: %v", err)
+			klog.Errorf("customized failure to get DeploymentList by namespace=%s for podName=%s %v", namespace, name, err)
 			return status.PodEvictionResult{Pod: podToEvict, TimedOut: false, Err: err}
 		}
-		if deploy.Spec.Template.ObjectMeta.Annotations == nil {
-			deploy.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+		var hasNotDeployment = true
+		for _, item := range deploys.Items {
+			klog.V(4).Infof("customized get deploy by namespace=%s deploymentname = %s", namespace, item.Name)
+			if strings.HasPrefix(name, item.Name) {
+				hasNotDeployment = false
+				deploy, err := ctx.ClientSet.AppsV1().Deployments(namespace).Get(context.TODO(), item.Name, metav1.GetOptions{})
+				if err != nil {
+					klog.Errorf("customized failure to get Deployment by namespace=%s for podName=%s %v", namespace, name, err)
+					return status.PodEvictionResult{Pod: podToEvict, TimedOut: false, Err: err}
+				}
+				if deploy.Spec.Template.ObjectMeta.Annotations == nil {
+					deploy.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+				}
+				deploy.Spec.Template.ObjectMeta.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
+				_, lastError = ctx.ClientSet.AppsV1().Deployments(namespace).Update(context.TODO(), deploy, metav1.UpdateOptions{})
+				if lastError == nil {
+					klog.V(4).Infof("customized restart : %v %v", namespace, name)
+					time.Sleep(60 * time.Second)
+					return status.PodEvictionResult{Pod: podToEvict, TimedOut: false, Err: nil}
+				}
+				klog.Errorf("customized deploy namespace=%s, name=%s: %v", namespace, name, lastError)
+			}
 		}
-		deploy.Spec.Template.ObjectMeta.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
-		_, lastError = ctx.ClientSet.AppsV1().Deployments(namespace).Update(context.TODO(), deploy, metav1.UpdateOptions{})
-		if lastError == nil {
-			klog.V(4).Infof("customized restart : %v %v", namespace, name)
-			time.Sleep(60 * time.Second)
+		if hasNotDeployment {
+			klog.Errorf("customized Failed there is not deployment in namespace=%s for podName=%s %v", namespace, name, err)
 			return status.PodEvictionResult{Pod: podToEvict, TimedOut: false, Err: nil}
 		}
-		klog.Errorf("customized deploy namespace=%s, name=%s: %v", namespace, name, lastError)
 	}
 	if fullEvictionPod {
-		klog.Errorf("Failed to evict pod %s, error: %v", podToEvict.Name, lastError)
+		klog.Errorf("customized Failed to evict pod %s, error: %v", podToEvict.Name, lastError)
 		ctx.Recorder.Eventf(podToEvict, apiv1.EventTypeWarning, "ScaleDownFailed", "failed to delete pod for ScaleDown")
 	}
 	return status.PodEvictionResult{Pod: podToEvict, TimedOut: true, Err: fmt.Errorf("failed to evict pod %s/%s within allowed timeout (last error: %v)", podToEvict.Namespace, podToEvict.Name, lastError)}
