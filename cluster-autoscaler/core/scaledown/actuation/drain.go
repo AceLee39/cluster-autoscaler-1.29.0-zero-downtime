@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -119,11 +120,13 @@ func (e Evictor) drainNodeWithPodsBasedOnPodPriority(ctx *acontext.AutoscalingCo
 		var err error
 		evictionResults, err = e.initiateEviction(ctx, node, group.FullEvictionPods, group.BestEffortEvictionPods, evictionResults, group.ShutdownGracePeriodSeconds)
 		if err != nil {
+			klog.V(1).Infof("customized get error when initiateEviction %s", node.Name)
 			return evictionResults, err
 		}
-
+		klog.V(1).Infof("customized start waitPodsToDisappear %s", node.Name)
 		// Evictions created successfully, wait ShutdownGracePeriodSeconds + podEvictionHeadroom to see if fullEviction pods really disappeared.
 		evictionResults, err = e.waitPodsToDisappear(ctx, node, group.FullEvictionPods, evictionResults, group.ShutdownGracePeriodSeconds)
+		klog.V(1).Infof("customized end waitPodsToDisappear %s", node.Name)
 		if err != nil {
 			return evictionResults, err
 		}
@@ -178,15 +181,33 @@ func (e Evictor) initiateEviction(ctx *acontext.AutoscalingContext, node *apiv1.
 
 	for _, pod := range fullEvictionPods {
 		evictionResults[pod.Name] = status.PodEvictionResult{Pod: pod, TimedOut: true, Err: nil}
-		go func(pod *apiv1.Pod) {
-			fullEvictionConfirmations <- e.evictPod(ctx, pod, retryUntil, maxTermination, true)
-		}(pod)
+		if pod.Labels["app"] != "" && strings.HasPrefix(pod.Labels["app"], "cbx-") {
+			klog.V(1).Infof("customized fullEvictionPods Going to restartPod %s/%s", pod.Namespace, pod.Name)
+			go func(pod *apiv1.Pod) {
+				fullEvictionConfirmations <- e.restartPod(ctx, pod, retryUntil, maxTermination, true)
+			}(pod)
+		} else {
+			klog.V(1).Infof("customized fullEvictionPods Going to evictPod %s/%s", pod.Namespace, pod.Name)
+			go func(pod *apiv1.Pod) {
+				fullEvictionConfirmations <- e.evictPod(ctx, pod, retryUntil, maxTermination, true)
+			}(pod)
+		}
+
 	}
 
 	for _, pod := range bestEffortEvictionPods {
-		go func(pod *apiv1.Pod) {
-			bestEffortEvictionConfirmations <- e.evictPod(ctx, pod, retryUntil, maxTermination, false)
-		}(pod)
+		if pod.Labels["app"] != "" && strings.HasPrefix(pod.Labels["app"], "cbx-") {
+			klog.V(1).Infof("customized bestEffortEvictionPods Going to restartPod %s/%s", pod.Namespace, pod.Name)
+			go func(pod *apiv1.Pod) {
+				bestEffortEvictionConfirmations <- e.restartPod(ctx, pod, retryUntil, maxTermination, false)
+			}(pod)
+		} else {
+			klog.V(1).Infof("customized bestEffortEvictionPods Going to evictPod %s/%s", pod.Namespace, pod.Name)
+			go func(pod *apiv1.Pod) {
+				bestEffortEvictionConfirmations <- e.evictPod(ctx, pod, retryUntil, maxTermination, false)
+			}(pod)
+		}
+
 	}
 
 	for i := 0; i < len(fullEvictionPods)+len(bestEffortEvictionPods); i++ {
@@ -213,6 +234,48 @@ func (e Evictor) initiateEviction(ctx *acontext.AutoscalingContext, node *apiv1.
 		return evictionResults, errors.NewAutoscalerError(errors.ApiCallError, "Failed to drain node %s/%s, due to following errors: %v", node.Namespace, node.Name, evictionErrs)
 	}
 	return evictionResults, nil
+}
+
+func (e Evictor) restartPod(ctx *acontext.AutoscalingContext, podToEvict *apiv1.Pod, retryUntil time.Time, maxTermination int64, fullEvictionPod bool) status.PodEvictionResult {
+	ctx.Recorder.Eventf(podToEvict, apiv1.EventTypeNormal, "ScaleDown", "rollout restart pod for node scale down")
+
+	termination := int64(apiv1.DefaultTerminationGracePeriodSeconds)
+	if podToEvict.Spec.TerminationGracePeriodSeconds != nil {
+		termination = *podToEvict.Spec.TerminationGracePeriodSeconds
+	}
+	if maxTermination > 0 && termination > maxTermination {
+		termination = maxTermination
+	}
+
+	var lastError error
+	namespace := podToEvict.Namespace
+	name := podToEvict.Labels["app"]
+	for first := true; first || time.Now().Before(retryUntil); time.Sleep(e.EvictionRetryTime) {
+		first = false
+
+		klog.V(4).Infof("customized going to restart : %v %v", namespace, name)
+		deploy, err := ctx.ClientSet.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("customized get deploy by namespace, name: %v", err)
+			return status.PodEvictionResult{Pod: podToEvict, TimedOut: false, Err: err}
+		}
+		if deploy.Spec.Template.ObjectMeta.Annotations == nil {
+			deploy.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+		}
+		deploy.Spec.Template.ObjectMeta.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
+		_, lastError = ctx.ClientSet.AppsV1().Deployments(namespace).Update(context.TODO(), deploy, metav1.UpdateOptions{})
+		if lastError == nil {
+			klog.V(4).Infof("customized restart : %v %v", namespace, name)
+			time.Sleep(60 * time.Second)
+			return status.PodEvictionResult{Pod: podToEvict, TimedOut: false, Err: nil}
+		}
+		klog.Errorf("customized deploy namespace=%s, name=%s: %v", namespace, name, lastError)
+	}
+	if fullEvictionPod {
+		klog.Errorf("Failed to evict pod %s, error: %v", podToEvict.Name, lastError)
+		ctx.Recorder.Eventf(podToEvict, apiv1.EventTypeWarning, "ScaleDownFailed", "failed to delete pod for ScaleDown")
+	}
+	return status.PodEvictionResult{Pod: podToEvict, TimedOut: true, Err: fmt.Errorf("failed to evict pod %s/%s within allowed timeout (last error: %v)", podToEvict.Namespace, podToEvict.Name, lastError)}
 }
 
 func (e Evictor) evictPod(ctx *acontext.AutoscalingContext, podToEvict *apiv1.Pod, retryUntil time.Time, maxTermination int64, fullEvictionPod bool) status.PodEvictionResult {

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -276,6 +277,10 @@ func (a *StaticAutoscaler) initializeRemainingPdbTracker() caerrors.AutoscalerEr
 	return nil
 }
 
+var (
+	first int = 0
+)
+
 // RunOnce iterates over node groups and scales them up/down if necessary
 func (a *StaticAutoscaler) RunOnce(currentTime time.Time) caerrors.AutoscalerError {
 	a.cleanUpIfRequired()
@@ -308,12 +313,42 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) caerrors.AutoscalerErr
 		klog.Errorf("Failed to list pods: %v", err)
 		return caerrors.ToAutoscalerError(caerrors.ApiCallError, err)
 	}
-	klog.V(4).Info("customized list pods: %v", pods)
-	for _, pod := range pods {
-		klog.V(1).Info("customized pod %s/%s", pod.Namespace, pod.Name)
-		kube_util.Restart(a.ClientSet, pod.Namespace, pod.Name)
-		time.Sleep(100 * time.Second)
+	if first == 2 {
+		first = 1
+		//klog.V(4).Infof("customized list pods: %v", pods)
+		var restartPods []*apiv1.Pod
+		for _, pod := range pods {
+			klog.V(1).Infof("customized ObjectMeta %v", pod.ObjectMeta)
+			if pod.Labels != nil {
+				if pod.Labels["app"] != "" {
+					klog.V(1).Infof("customized pod applabel %s/%s %s", pod.Namespace, pod.Name, pod.Labels["app"])
+				}
+				keysForLabels := make([]string, 0, len(pod.Labels))
+				for k := range pod.Labels {
+					keysForLabels = append(keysForLabels, k)
+				}
+				mapStringForLabels := "map[string]string{"
+				for _, k := range keysForLabels {
+					mapStringForLabels += fmt.Sprintf("%v: %v,", k, pod.Labels[k])
+				}
+				mapStringForLabels += "}"
+				klog.V(1).Infof("customized pod %s/%s %s", pod.Namespace, pod.Name, mapStringForLabels)
+				if pod.Labels["app"] != "" && strings.HasPrefix(pod.Labels["app"], "cbx-") {
+					klog.V(1).Infof("customized pod %s/%s applabel=%s", pod.Namespace, pod.Name, pod.Labels["app"])
+					restartPods = append(restartPods, pod)
+					go kube_util.Restart(a.ClientSet, pod.Namespace, pod.Labels["app"])
+				}
+			}
+		}
+		err2 := kube_util.WaitPodsToDisappear(a.ClientSet, allNodes[0], restartPods)
+		if err2 != nil {
+			klog.Errorf("customized Failed to list pods: %v", err)
+		}
+		klog.V(1).Infof("customized delay auto scale checking 1mins")
+		time.Sleep(60 * time.Second)
+		klog.V(1).Infof("customized delay auto scale checking after 1mins")
 	}
+
 	originalScheduledPods, unschedulablePods := kube_util.ScheduledPods(pods), kube_util.UnschedulablePods(pods)
 	schedulerUnprocessed := make([]*apiv1.Pod, 0, 0)
 	isSchedulerProcessingIgnored := len(a.BypassedSchedulers) > 0
@@ -790,7 +825,7 @@ func (a *StaticAutoscaler) removeOldUnregisteredNodes(allUnregisteredNodes []clu
 			}
 			nodesToDelete = instancesToFakeNodes(instances)
 		}
-
+		//customized
 		err = nodeGroup.DeleteNodes(nodesToDelete)
 		csr.InvalidateNodeInstancesCacheEntry(nodeGroup)
 		if err != nil {

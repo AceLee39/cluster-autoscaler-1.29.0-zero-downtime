@@ -338,11 +338,9 @@ func (m *asgCache) DeleteInstances(instances []*AwsInstanceRef) error {
 				ShouldDecrementDesiredCapacity: aws.Bool(true),
 			}
 			start := time.Now()
-			klog.V(4).Infof("Customized Sleep Before %s TerminateInstanceInAutoScalingGroup", instance.Name)
-			time.Sleep(60*time.Second)
-			klog.V(4).Infof("Customized Sleep After %s TerminateInstanceInAutoScalingGroup", instance.Name)
-			
+			klog.V(4).Infof("customized Sleep Before %s TerminateInstanceInAutoScalingGroup", instance.Name)
 			resp, err := m.awsService.TerminateInstanceInAutoScalingGroup(params)
+			klog.V(4).Infof("customized Sleep After %s TerminateInstanceInAutoScalingGroup", instance.Name)
 			observeAWSRequest("TerminateInstanceInAutoScalingGroup", err, start)
 			if err != nil {
 				return err

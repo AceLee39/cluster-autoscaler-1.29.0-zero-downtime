@@ -17,6 +17,7 @@ limitations under the License.
 package simulator
 
 import (
+	"k8s.io/klog/v2"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -53,6 +54,8 @@ func GetPodsToMove(nodeInfo *schedulerframework.NodeInfo, deleteOptions options.
 	for _, podInfo := range nodeInfo.Pods {
 		pod := podInfo.Pod
 		status := drainabilityRules.Drainable(drainCtx, pod)
+		//get pod in the node
+		//klog.V(4).Infof("customized GetPodsToMove %s %s %v", nodeInfo.Node().Name, pod.Name, status)
 		switch status.Outcome {
 		case drainability.UndefinedOutcome, drainability.DrainOk:
 			if pod_util.IsDaemonSetPod(pod) {
