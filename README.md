@@ -1,4 +1,12 @@
 # Kubernetes Autoscaler
+Base on https://github.com/kubernetes/autoscaler/archive/refs/tags/cluster-autoscaler-1.29.0.tar.gz
+
+How to compile : cd to cluster-autoscaler folder 
+make build
+
+flag customized
+Please note :
+the pod should with label app=cbx-
 
 [![Release Charts](https://github.com/kubernetes/autoscaler/actions/workflows/release.yaml/badge.svg)](https://github.com/kubernetes/autoscaler/actions/workflows/release.yaml) [![Tests](https://github.com/kubernetes/autoscaler/actions/workflows/ci.yaml/badge.svg)](https://github.com/kubernetes/autoscaler/actions/workflows/ci.yaml) [![GoDoc Widget]][GoDoc]
 
