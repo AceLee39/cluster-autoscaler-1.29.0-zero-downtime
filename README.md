@@ -1,4 +1,4 @@
-# Kubernetes Autoscaler
+# Kubernetes Autoscaler Zero downtime with single replica
 
 Base on https://github.com/kubernetes/autoscaler/archive/refs/tags/cluster-autoscaler-1.29.0.tar.gz
 
