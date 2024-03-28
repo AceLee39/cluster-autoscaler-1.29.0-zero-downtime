@@ -19,10 +19,11 @@ package actuation
 import (
 	"context"
 	"fmt"
-	"k8s.io/klog/v2"
 	"sort"
 	"strings"
 	"time"
+
+	"k8s.io/klog/v2"
 
 	apiv1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
@@ -181,7 +182,7 @@ func (e Evictor) initiateEviction(ctx *acontext.AutoscalingContext, node *apiv1.
 
 	for _, pod := range fullEvictionPods {
 		evictionResults[pod.Name] = status.PodEvictionResult{Pod: pod, TimedOut: true, Err: nil}
-		if pod.Labels["app"] != "" && strings.HasPrefix(pod.Labels["app"], "cbx-") {
+		if pod.Labels["app"] != "" && ctx.RollingRestartAppLabel != "" && strings.HasPrefix(pod.Labels["app"], ctx.RollingRestartAppLabel) {
 			klog.V(1).Infof("customized fullEvictionPods Going to restartPod %s/%s", pod.Namespace, pod.Name)
 			go func(pod *apiv1.Pod) {
 				fullEvictionConfirmations <- e.restartPod(ctx, pod, retryUntil, maxTermination, true)
@@ -196,7 +197,7 @@ func (e Evictor) initiateEviction(ctx *acontext.AutoscalingContext, node *apiv1.
 	}
 
 	for _, pod := range bestEffortEvictionPods {
-		if pod.Labels["app"] != "" && strings.HasPrefix(pod.Labels["app"], "cbx-") {
+		if pod.Labels["app"] != "" && ctx.RollingRestartAppLabel != "" && strings.HasPrefix(pod.Labels["app"], ctx.RollingRestartAppLabel) {
 			klog.V(1).Infof("customized bestEffortEvictionPods Going to restartPod %s/%s", pod.Namespace, pod.Name)
 			go func(pod *apiv1.Pod) {
 				bestEffortEvictionConfirmations <- e.restartPod(ctx, pod, retryUntil, maxTermination, false)

@@ -1,12 +1,16 @@
 # Kubernetes Autoscaler
+
 Base on https://github.com/kubernetes/autoscaler/archive/refs/tags/cluster-autoscaler-1.29.0.tar.gz
 
-How to compile : cd to cluster-autoscaler folder 
-make build 
+How to compile : cd to cluster-autoscaler folder
+make build
 
 flag customized
 Please note :
-the pod should with label app=cbx-
+config : command in the autoscaler deployment yaml
+command: - ./cluster-autoscaler - --v=4 - --stderrthreshold=info - --cloud-provider=civo - --nodes=1:10:workers - --skip-nodes-with-local-storage=false - --skip-nodes-with-system-pods=false - --rolling-restart-label-app=test
+
+the pod should with label app=test which config in the above command rolling-restart-label-app=test
 
 [![Release Charts](https://github.com/kubernetes/autoscaler/actions/workflows/release.yaml/badge.svg)](https://github.com/kubernetes/autoscaler/actions/workflows/release.yaml) [![Tests](https://github.com/kubernetes/autoscaler/actions/workflows/ci.yaml/badge.svg)](https://github.com/kubernetes/autoscaler/actions/workflows/ci.yaml) [![GoDoc Widget]][GoDoc]
 
@@ -30,11 +34,12 @@ resource requests of a deployment based on the number of nodes in the Kubernetes
 Interested in autoscaling? Want to talk? Have questions, concerns or great ideas?
 
 Please join us on #sig-autoscaling at https://kubernetes.slack.com/, or join one
-of our weekly meetings.  See [the Kubernetes Community Repo](https://github.com/kubernetes/community/blob/master/sig-autoscaling/README.md) for more information.
+of our weekly meetings. See [the Kubernetes Community Repo](https://github.com/kubernetes/community/blob/master/sig-autoscaling/README.md) for more information.
 
 ## Getting the Code
 
 Fork the repository in the cloud:
+
 1. Visit https://github.com/kubernetes/autoscaler
 1. Click Fork button (top right) to establish a cloud-based fork.
 

@@ -157,6 +157,7 @@ spec:
             - --nodes=1:10:workers
             - --skip-nodes-with-local-storage=false
             - --skip-nodes-with-system-pods=false
+            - --rolling-restart-label-app=test
           env:
             - name: CIVO_API_URL
               valueFrom:
