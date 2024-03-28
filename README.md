@@ -1,5 +1,5 @@
 # Kubernetes Autoscaler Zero downtime support  **"single replica"** 
-## Base on https://github.com/kubernetes/autoscaler/archive/refs/tags/cluster-autoscaler-1.29.0.tar.gz
+1. Base on https://github.com/kubernetes/autoscaler/archive/refs/tags/cluster-autoscaler-1.29.0.tar.gz
 
 How to compile : cd to cluster-autoscaler folder
 make build
@@ -7,7 +7,7 @@ make build
 flag customized
 Please note :
 config : command in the autoscaler deployment yaml
-` 
+```
 command:
 - ./cluster-autoscaler 
 - --v=4 
@@ -16,11 +16,13 @@ command:
 - --nodes=1:10:workers 
 - --skip-nodes-with-local-storage=false 
 - --skip-nodes-with-system-pods=false 
-- --rolling-restart-label-app=test 
-`
+- --rolling-restart-label-app=test
+```
 the pod should with label app=test which config in the above command rolling-restart-label-app=test
-## https://aws.amazon.com/cn/blogs/china/use-the-readiness-gate-to-solve-the-service-interruption-caused-by-the-rolling-upgrade-of-eks-pod/
-### deployment yaml config with lifecycle preStop
+
+2. https://aws.amazon.com/cn/blogs/china/use-the-readiness-gate-to-solve-the-service-interruption-caused-by-the-rolling-upgrade-of-eks-pod
+
+   2.1 deployment yaml config with lifecycle preStop
 
 ```
   replicas: 1
@@ -34,7 +36,7 @@ the pod should with label app=test which config in the above command rolling-res
         exec:
            command: ["/bin/bash", "-c", "sleep 120"]
 ```
-### 使用 Readiness Gate
+   2.2 使用 Readiness Gate
 
 
 
